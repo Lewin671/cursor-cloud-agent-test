@@ -151,6 +151,7 @@ func (s *AuthService) issueToken(user model.User) (string, *apperrors.APIError) 
 	now := time.Now().UTC()
 	claims := jwt.RegisteredClaims{
 		Subject:   user.ID,
+		ID:        uuid.NewString(),
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(s.tokenTTL)),
 	}

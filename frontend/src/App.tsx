@@ -62,6 +62,7 @@ function App() {
       {pomodoro.syncMessage ? <p className="info-text">{pomodoro.syncMessage}</p> : null}
 
       <SettingsPanel
+        key={`${pomodoro.state.version}-${pomodoro.state.focusDurationSeconds}-${pomodoro.state.shortBreakDurationSeconds}-${pomodoro.state.longBreakDurationSeconds}`}
         state={pomodoro.state}
         actionLoading={pomodoro.actionLoading}
         onSave={pomodoro.updateSettings}

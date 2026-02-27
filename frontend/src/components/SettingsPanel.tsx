@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { PomodoroState } from "../types";
 
 type Props = {
@@ -15,12 +15,6 @@ export function SettingsPanel({ state, actionLoading, onSave }: Props) {
   const [focusMinutes, setFocusMinutes] = useState(Math.floor(state.focusDurationSeconds / 60));
   const [shortBreakMinutes, setShortBreakMinutes] = useState(Math.floor(state.shortBreakDurationSeconds / 60));
   const [longBreakMinutes, setLongBreakMinutes] = useState(Math.floor(state.longBreakDurationSeconds / 60));
-
-  useEffect(() => {
-    setFocusMinutes(Math.floor(state.focusDurationSeconds / 60));
-    setShortBreakMinutes(Math.floor(state.shortBreakDurationSeconds / 60));
-    setLongBreakMinutes(Math.floor(state.longBreakDurationSeconds / 60));
-  }, [state.focusDurationSeconds, state.shortBreakDurationSeconds, state.longBreakDurationSeconds]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
