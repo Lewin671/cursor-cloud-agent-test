@@ -1,17 +1,25 @@
 {
-  "name": "cursor-cloud-agent-test",
+  "name": "pomodoro-sync",
   "version": "1.0.0",
-  "description": "A minimal Node.js application",
+  "description": "A Pomodoro timer app with cross-device data synchronization",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test src/**/*.test.js",
-    "lint": "eslint src/"
+    "lint": "eslint src/ public/"
   },
-  "keywords": [],
+  "keywords": ["pomodoro", "timer", "sync"],
   "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
-    "eslint": "^10.0.2"
+    "eslint": "^9.0.0"
   }
 }

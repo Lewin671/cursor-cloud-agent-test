@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pomodoro Sync - 番茄时钟</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Auth View -->
+    <div id="auth-view" class="view">
+      <div class="auth-container">
+        <div class="auth-header">
+          <div class="logo">🍅</div>
+          <h1>Pomodoro Sync</h1>
+          <p class="subtitle">跨设备同步的番茄时钟</p>
+        </div>
+        <div class="auth-tabs">
+          <button class="tab-btn active" data-tab="login">登录</button>
+          <button class="tab-btn" data-tab="register">注册</button>
+        </div>
+        <form id="login-form" class="auth-form">
+          <div class="form-group">
+            <label for="login-username">用户名</label>
+            <input type="text" id="login-username" placeholder="输入用户名" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="login-password">密码</label>
+            <input type="password" id="login-password" placeholder="输入密码" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-primary">登录</button>
+          <div id="login-error" class="error-msg"></div>
+        </form>
+        <form id="register-form" class="auth-form hidden">
+          <div class="form-group">
+            <label for="register-username">用户名</label>
+            <input type="text" id="register-username" placeholder="2-30个字符" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="register-password">密码</label>
+            <input type="password" id="register-password" placeholder="至少4个字符" required autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-primary">注册</button>
+          <div id="register-error" class="error-msg"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main Timer View -->
+    <div id="timer-view" class="view hidden">
+      <header class="app-header">
+        <div class="header-left">
+          <span class="logo-small">🍅</span>
+          <span class="app-title">Pomodoro Sync</span>
+        </div>
+        <div class="header-right">
+          <div id="sync-indicator" class="sync-badge" title="已连接设备数">
+            <span class="sync-dot"></span>
+            <span id="device-count">1</span> 台设备
+          </div>
+          <span id="username-display" class="username"></span>
+          <button id="settings-btn" class="btn btn-icon" title="设置">⚙️</button>
+          <button id="logout-btn" class="btn btn-icon" title="退出">🚪</button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <div class="timer-section">
+          <!-- Timer type tabs -->
+          <div class="timer-tabs">
+            <button class="timer-tab active" data-type="work">专注</button>
+            <button class="timer-tab" data-type="short_break">短休息</button>
+            <button class="timer-tab" data-type="long_break">长休息</button>
+          </div>
+
+          <!-- Circular timer -->
+          <div class="timer-circle-container">
+            <svg class="timer-ring" viewBox="0 0 240 240">
+              <circle class="timer-ring-bg" cx="120" cy="120" r="110" />
+              <circle id="timer-ring-progress" class="timer-ring-progress" cx="120" cy="120" r="110" />
+            </svg>
+            <div class="timer-display">
+              <div id="timer-time" class="timer-time">25:00</div>
+              <div id="timer-label" class="timer-label">专注时间</div>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="timer-controls">
+            <button id="start-btn" class="btn btn-large btn-primary">开始</button>
+            <button id="pause-btn" class="btn btn-large btn-warning hidden">暂停</button>
+            <button id="resume-btn" class="btn btn-large btn-primary hidden">继续</button>
+            <button id="reset-btn" class="btn btn-large btn-secondary">重置</button>
+          </div>
+
+          <!-- Session counter -->
+          <div class="session-counter">
+            <span id="session-count">0</span> / <span id="session-target">4</span> 个番茄
+          </div>
+        </div>
+
+        <!-- Stats & History -->
+        <div class="sidebar">
+          <div class="stats-card">
+            <h3>今日统计</h3>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <div id="stat-sessions" class="stat-value">0</div>
+                <div class="stat-label">完成番茄</div>
+              </div>
+              <div class="stat-item">
+                <div id="stat-minutes" class="stat-value">0</div>
+                <div class="stat-label">专注分钟</div>
+              </div>
+            </div>
+          </div>
+          <div class="history-card">
+            <div class="history-header">
+              <h3>历史记录</h3>
+              <button id="clear-history-btn" class="btn btn-small btn-danger">清空</button>
+            </div>
+            <ul id="history-list" class="history-list">
+              <li class="history-empty">暂无记录</li>
+            </ul>
+          </div>
+        </div>
+      </main>
+
+      <!-- Settings Modal -->
+      <div id="settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+          <h2>设置</h2>
+          <form id="settings-form">
+            <div class="form-group">
+              <label for="setting-work">专注时长（分钟）</label>
+              <input type="number" id="setting-work" min="1" max="120" value="25">
+            </div>
+            <div class="form-group">
+              <label for="setting-short-break">短休息时长（分钟）</label>
+              <input type="number" id="setting-short-break" min="1" max="30" value="5">
+            </div>
+            <div class="form-group">
+              <label for="setting-long-break">长休息时长（分钟）</label>
+              <input type="number" id="setting-long-break" min="1" max="60" value="15">
+            </div>
+            <div class="form-group">
+              <label for="setting-interval">长休息间隔（番茄数）</label>
+              <input type="number" id="setting-interval" min="2" max="10" value="4">
+            </div>
+            <div class="modal-actions">
+              <button type="button" id="settings-cancel" class="btn btn-secondary">取消</button>
+              <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Notification toast -->
+      <div id="toast" class="toast hidden"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
