@@ -13,6 +13,12 @@ module.exports = [
         __dirname: "readonly",
         __filename: "readonly",
         fetch: "readonly",
+        URL: "readonly",
+        Buffer: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
       },
     },
     rules: {
@@ -21,6 +27,22 @@ module.exports = [
       eqeqeq: "error",
       "no-var": "error",
       "prefer-const": "warn",
+    },
+  },
+  {
+    files: ["src/public/**/*.js"],
+    languageOptions: {
+      sourceType: "script",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        EventSource: "readonly",
+        HTMLInputElement: "readonly",
+        HTMLButtonElement: "readonly",
+        fetch: "readonly",
+        localStorage: "readonly",
+        setInterval: "readonly",
+      },
     },
   },
 ];

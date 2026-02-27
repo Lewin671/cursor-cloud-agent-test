@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>同步番茄钟</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="card">
+        <h1>同步番茄钟</h1>
+        <p class="subtitle">先注册/登录，再在不同设备用同一账号实时同步。</p>
+        <div class="connection-row">
+          <input
+            id="userIdInput"
+            type="text"
+            maxlength="40"
+            autocomplete="off"
+            placeholder="用户 ID（如 team-alice）"
+          />
+          <input
+            id="passwordInput"
+            type="password"
+            maxlength="128"
+            autocomplete="off"
+            placeholder="密码（至少8位）"
+          />
+          <button id="registerBtn" type="button">注册</button>
+          <button id="loginBtn" type="button">登录</button>
+          <button id="logoutBtn" type="button">登出</button>
+          <button id="refreshBtn" type="button">刷新</button>
+        </div>
+        <p id="authStatus" class="status">未登录</p>
+        <p id="syncStatus" class="status">未建立同步连接</p>
+      </header>
+
+      <section class="card timer-card">
+        <p id="phaseLabel" class="phase">专注阶段</p>
+        <p id="countdown" class="countdown">25:00</p>
+        <p id="timerStatus" class="status-text">等待开始</p>
+        <div class="controls">
+          <button id="startPauseBtn" type="button">开始</button>
+          <button id="resetBtn" type="button">重置</button>
+          <button id="skipBtn" type="button">跳过</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>番茄钟设置</h2>
+        <div class="grid">
+          <label>
+            专注时长（分钟）
+            <input id="focusMinutesInput" type="number" min="0.001" step="0.001" />
+          </label>
+          <label>
+            短休息（分钟）
+            <input id="shortBreakMinutesInput" type="number" min="0.001" step="0.001" />
+          </label>
+          <label>
+            长休息（分钟）
+            <input id="longBreakMinutesInput" type="number" min="0.001" step="0.001" />
+          </label>
+          <label>
+            几轮后长休息
+            <input id="longBreakEveryInput" type="number" min="2" step="1" />
+          </label>
+        </div>
+        <button id="saveSettingsBtn" type="button">保存设置</button>
+      </section>
+
+      <section class="card">
+        <h2>任务清单</h2>
+        <div class="task-input-row">
+          <input id="taskInput" type="text" maxlength="120" placeholder="添加待办任务" />
+          <button id="addTaskBtn" type="button">添加</button>
+        </div>
+        <ul id="taskList" class="task-list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>同步信息</h2>
+        <p>完成专注轮次：<strong id="completedCount">0</strong></p>
+        <p>数据版本：<strong id="versionText">-</strong></p>
+        <p>最后更新时间：<strong id="updatedAtText">-</strong></p>
+      </section>
+
+      <p id="feedback" class="feedback" aria-live="polite"></p>
+    </main>
+
+    <script src="/client.js" defer></script>
+  </body>
+</html>
