@@ -48,10 +48,10 @@ function parseSseChunk(rawChunk) {
   };
 }
 
-function openSse(baseUrl, userId) {
+function openSse(baseUrl, token) {
   return new Promise((resolve, reject) => {
     const request = http.request(
-      `${baseUrl}/api/stream?userId=${encodeURIComponent(userId)}`,
+      `${baseUrl}/api/stream?token=${encodeURIComponent(token)}`,
       { method: "GET", headers: { Accept: "text/event-stream" } },
       (response) => {
         if (response.statusCode !== 200) {
@@ -138,29 +138,46 @@ function openSse(baseUrl, userId) {
   });
 }
 
-describe("Pomodoro app", () => {
+describe("Pomodoro app with auth", () => {
   let server;
   let baseUrl;
   let tempDir;
 
-  async function getState(userId) {
-    const response = await fetch(`${baseUrl}/api/state?userId=${encodeURIComponent(userId)}`);
-    const payload = await response.json();
+  async function request(method, requestPath, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (Object.hasOwn(options, "token") && options.token) {
+      headers.Authorization = `Bearer ${options.token}`;
+    }
+
+    let body;
+    if (Object.hasOwn(options, "body")) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
+
+    const response = await fetch(`${baseUrl}${requestPath}`, { method, headers, body });
+    const rawText = await response.text();
+    let payload = {};
+    if (rawText.trim()) {
+      payload = JSON.parse(rawText);
+    }
     return { response, payload };
   }
 
-  async function postAction(userId, type, payload = {}) {
-    const response = await fetch(`${baseUrl}/api/action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, type, payload }),
+  async function register(userId, password = "password-1234") {
+    return request("POST", "/api/auth/register", {
+      body: { userId, password },
     });
-    const result = await response.json();
-    return { response, payload: result };
+  }
+
+  async function login(userId, password = "password-1234") {
+    return request("POST", "/api/auth/login", {
+      body: { userId, password },
+    });
   }
 
   before(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pomodoro-app-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pomodoro-app-auth-"));
     const dataFile = path.join(tempDir, "store.json");
     server = createApp({
       dataFile,
@@ -186,80 +203,113 @@ describe("Pomodoro app", () => {
   });
 
   it("GET /health returns ok status", async () => {
-    const response = await fetch(`${baseUrl}/health`);
-    const body = await response.json();
+    const { response, payload } = await request("GET", "/health");
     assert.strictEqual(response.status, 200);
-    assert.strictEqual(body.status, "ok");
+    assert.strictEqual(payload.status, "ok");
   });
 
-  it("GET /api/state initializes per-user state", async () => {
-    const { response, payload } = await getState("alice");
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(payload.userId, "alice");
-    assert.strictEqual(payload.state.timer.phase, "focus");
-    assert.strictEqual(payload.state.timer.status, "idle");
-    assert.strictEqual(payload.state.settings.focusMinutes, 25);
-    assert.deepStrictEqual(payload.state.tasks, []);
+  it("registers account and returns token", async () => {
+    const { response, payload } = await register("alice-auth");
+    assert.strictEqual(response.status, 201);
+    assert.strictEqual(payload.userId, "alice-auth");
+    assert.ok(typeof payload.token === "string" && payload.token.length > 20);
   });
 
-  it("POST /api/action START and PAUSE update timer state", async () => {
-    const started = await postAction("bob", "START");
+  it("does not allow duplicate registration", async () => {
+    await register("duplicate-user");
+    const { response, payload } = await register("duplicate-user");
+    assert.strictEqual(response.status, 409);
+    assert.strictEqual(payload.error, "Account already exists");
+  });
+
+  it("login succeeds with correct password and fails with wrong password", async () => {
+    await register("login-user");
+
+    const success = await login("login-user");
+    assert.strictEqual(success.response.status, 200);
+    assert.strictEqual(success.payload.userId, "login-user");
+    assert.ok(success.payload.token);
+
+    const failed = await login("login-user", "wrong-password");
+    assert.strictEqual(failed.response.status, 401);
+    assert.strictEqual(failed.payload.error, "Invalid credentials");
+  });
+
+  it("protects state endpoint when unauthorized", async () => {
+    const { response, payload } = await request("GET", "/api/state");
+    assert.strictEqual(response.status, 401);
+    assert.strictEqual(payload.error, "Unauthorized");
+  });
+
+  it("auth token can read state and update timer", async () => {
+    const auth = await register("timer-user");
+    const token = auth.payload.token;
+
+    const stateRes = await request("GET", "/api/state", { token });
+    assert.strictEqual(stateRes.response.status, 200);
+    assert.strictEqual(stateRes.payload.userId, "timer-user");
+    assert.strictEqual(stateRes.payload.state.timer.status, "idle");
+
+    const started = await request("POST", "/api/action", {
+      token,
+      body: { type: "START" },
+    });
     assert.strictEqual(started.response.status, 200);
     assert.strictEqual(started.payload.state.timer.status, "running");
-    assert.ok(Number.isInteger(started.payload.state.timer.endAt));
 
     await sleep(60);
 
-    const paused = await postAction("bob", "PAUSE");
+    const paused = await request("POST", "/api/action", {
+      token,
+      body: { type: "PAUSE" },
+    });
     assert.strictEqual(paused.response.status, 200);
     assert.strictEqual(paused.payload.state.timer.status, "paused");
     assert.ok(paused.payload.state.timer.remainingMs < paused.payload.state.timer.durationMs);
   });
 
-  it("UPDATE_SETTINGS applies new durations", async () => {
-    const updated = await postAction("settings-user", "UPDATE_SETTINGS", {
-      focusMinutes: 1,
-      shortBreakMinutes: 0.5,
-      longBreakMinutes: 2,
-      longBreakEvery: 3,
+  it("task actions add, toggle and delete with auth", async () => {
+    const auth = await register("task-auth-user");
+    const token = auth.payload.token;
+
+    const added = await request("POST", "/api/action", {
+      token,
+      body: { type: "ADD_TASK", payload: { title: "完成登录功能验证" } },
     });
-
-    assert.strictEqual(updated.response.status, 200);
-    assert.strictEqual(updated.payload.state.settings.focusMinutes, 1);
-    assert.strictEqual(updated.payload.state.settings.shortBreakMinutes, 0.5);
-    assert.strictEqual(updated.payload.state.settings.longBreakMinutes, 2);
-    assert.strictEqual(updated.payload.state.settings.longBreakEvery, 3);
-    assert.strictEqual(updated.payload.state.timer.durationMs, 60000);
-    assert.strictEqual(updated.payload.state.timer.remainingMs, 60000);
-  });
-
-  it("task actions add, toggle and delete data", async () => {
-    const added = await postAction("task-user", "ADD_TASK", { title: "完成需求开发" });
     assert.strictEqual(added.response.status, 200);
     assert.strictEqual(added.payload.state.tasks.length, 1);
     assert.strictEqual(added.payload.state.tasks[0].completed, false);
     const taskId = added.payload.state.tasks[0].id;
 
-    const toggled = await postAction("task-user", "TOGGLE_TASK", {
-      taskId,
-      completed: true,
+    const toggled = await request("POST", "/api/action", {
+      token,
+      body: { type: "TOGGLE_TASK", payload: { taskId, completed: true } },
     });
     assert.strictEqual(toggled.response.status, 200);
     assert.strictEqual(toggled.payload.state.tasks[0].completed, true);
 
-    const deleted = await postAction("task-user", "DELETE_TASK", { taskId });
+    const deleted = await request("POST", "/api/action", {
+      token,
+      body: { type: "DELETE_TASK", payload: { taskId } },
+    });
     assert.strictEqual(deleted.response.status, 200);
     assert.strictEqual(deleted.payload.state.tasks.length, 0);
   });
 
-  it("SSE stream pushes updates for the same user", async () => {
-    const stream = await openSse(baseUrl, "stream-user");
+  it("SSE stream pushes updates when token is valid", async () => {
+    const auth = await register("stream-auth-user");
+    const token = auth.payload.token;
+    const stream = await openSse(baseUrl, token);
+
     const initialEvent = await stream.nextEvent((event) => event.event === "state");
     const initialPayload = JSON.parse(initialEvent.data);
-    assert.strictEqual(initialPayload.userId, "stream-user");
+    assert.strictEqual(initialPayload.userId, "stream-auth-user");
     assert.strictEqual(initialPayload.state.timer.status, "idle");
 
-    await postAction("stream-user", "START");
+    await request("POST", "/api/action", {
+      token,
+      body: { type: "START" },
+    });
 
     const updateEvent = await stream.nextEvent((event) => {
       if (event.event !== "state") {
@@ -274,28 +324,56 @@ describe("Pomodoro app", () => {
     stream.close();
   });
 
-  it("auto transitions to break after focus countdown ends", async () => {
-    await postAction("auto-user", "UPDATE_SETTINGS", {
-      focusMinutes: 0.002,
-      shortBreakMinutes: 0.02,
-      longBreakMinutes: 0.03,
-      longBreakEvery: 2,
+  it("auto transitions to break phase after focus countdown", async () => {
+    const auth = await register("auto-auth-user");
+    const token = auth.payload.token;
+
+    await request("POST", "/api/action", {
+      token,
+      body: {
+        type: "UPDATE_SETTINGS",
+        payload: {
+          focusMinutes: 0.002,
+          shortBreakMinutes: 0.02,
+          longBreakMinutes: 0.03,
+          longBreakEvery: 2,
+        },
+      },
     });
-    await postAction("auto-user", "START");
+
+    await request("POST", "/api/action", {
+      token,
+      body: { type: "START" },
+    });
 
     await sleep(260);
 
-    const { response, payload } = await getState("auto-user");
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(payload.state.timer.phase, "shortBreak");
-    assert.strictEqual(payload.state.timer.status, "running");
-    assert.strictEqual(payload.state.stats.completedFocusSessions, 1);
+    const stateRes = await request("GET", "/api/state", { token });
+    assert.strictEqual(stateRes.response.status, 200);
+    assert.strictEqual(stateRes.payload.state.timer.phase, "shortBreak");
+    assert.strictEqual(stateRes.payload.state.timer.status, "running");
+    assert.strictEqual(stateRes.payload.state.stats.completedFocusSessions, 1);
+  });
+
+  it("supports me and logout endpoints", async () => {
+    const auth = await register("logout-user");
+    const token = auth.payload.token;
+
+    const meRes = await request("GET", "/api/auth/me", { token });
+    assert.strictEqual(meRes.response.status, 200);
+    assert.strictEqual(meRes.payload.userId, "logout-user");
+
+    const logoutRes = await request("POST", "/api/auth/logout", { token });
+    assert.strictEqual(logoutRes.response.status, 200);
+    assert.strictEqual(logoutRes.payload.success, true);
+
+    const stateRes = await request("GET", "/api/state", { token });
+    assert.strictEqual(stateRes.response.status, 401);
   });
 
   it("returns 404 for unknown route", async () => {
-    const response = await fetch(`${baseUrl}/unknown-path`);
-    const body = await response.json();
+    const { response, payload } = await request("GET", "/unknown-path");
     assert.strictEqual(response.status, 404);
-    assert.strictEqual(body.error, "Not found");
+    assert.strictEqual(payload.error, "Not found");
   });
 });

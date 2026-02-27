@@ -10,19 +10,29 @@
     <main class="app">
       <header class="card">
         <h1>同步番茄钟</h1>
-        <p class="subtitle">同一用户 ID 在不同设备登录，即可实时同步同一份数据。</p>
+        <p class="subtitle">先注册/登录，再在不同设备用同一账号实时同步。</p>
         <div class="connection-row">
           <input
             id="userIdInput"
             type="text"
             maxlength="40"
             autocomplete="off"
-            placeholder="输入用户 ID（如 team-alice）"
+            placeholder="用户 ID（如 team-alice）"
           />
-          <button id="connectBtn" type="button">连接</button>
+          <input
+            id="passwordInput"
+            type="password"
+            maxlength="128"
+            autocomplete="off"
+            placeholder="密码（至少8位）"
+          />
+          <button id="registerBtn" type="button">注册</button>
+          <button id="loginBtn" type="button">登录</button>
+          <button id="logoutBtn" type="button">登出</button>
           <button id="refreshBtn" type="button">刷新</button>
         </div>
-        <p id="syncStatus" class="status">尚未连接</p>
+        <p id="authStatus" class="status">未登录</p>
+        <p id="syncStatus" class="status">未建立同步连接</p>
       </header>
 
       <section class="card timer-card">

@@ -1,7 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, scryptSync, timingSafeEqual } = require("node:crypto");
 
 const DEFAULT_SETTINGS = Object.freeze({
   focusMinutes: 25,
@@ -14,6 +14,9 @@ const MIN_DURATION_MINUTES = 0.001;
 const MAX_DURATION_MINUTES = 180;
 const MIN_LONG_BREAK_INTERVAL = 2;
 const MAX_LONG_BREAK_INTERVAL = 12;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const PHASE_TO_SETTINGS_KEY = Object.freeze({
   focus: "focusMinutes",
@@ -76,6 +79,75 @@ function validateUserId(userId) {
   if (/\s/.test(userId)) {
     throw createApiError(400, "userId cannot contain spaces");
   }
+}
+
+function normalizePassword(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value;
+}
+
+function validatePasswordForRegistration(password) {
+  if (!password) {
+    throw createApiError(400, "password is required");
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+    throw createApiError(
+      400,
+      `password length must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH}`,
+    );
+  }
+}
+
+function validatePasswordForLogin(password) {
+  if (!password) {
+    throw createApiError(400, "password is required");
+  }
+
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    throw createApiError(400, `password length must be at most ${MAX_PASSWORD_LENGTH}`);
+  }
+}
+
+function hashPassword(password, salt) {
+  return scryptSync(password, salt, 64).toString("hex");
+}
+
+function createPasswordRecord(password) {
+  const salt = randomUUID();
+  return {
+    passwordSalt: salt,
+    passwordHash: hashPassword(password, salt),
+  };
+}
+
+function safeCompareHash(leftHex, rightHex) {
+  try {
+    const left = Buffer.from(leftHex, "hex");
+    const right = Buffer.from(rightHex, "hex");
+    if (left.length === 0 || right.length === 0 || left.length !== right.length) {
+      return false;
+    }
+    return timingSafeEqual(left, right);
+  } catch {
+    return false;
+  }
+}
+
+function extractBearerToken(authorizationHeader) {
+  if (typeof authorizationHeader !== "string") {
+    return "";
+  }
+
+  const [scheme, token] = authorizationHeader.split(" ");
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return "";
+  }
+
+  return token.trim();
 }
 
 function validateDuration(value, fieldName) {
@@ -222,6 +294,26 @@ function parseStoredTask(task) {
   };
 }
 
+function parseStoredAccount(account) {
+  if (!account || typeof account !== "object") {
+    return null;
+  }
+
+  if (typeof account.passwordSalt !== "string" || !account.passwordSalt) {
+    return null;
+  }
+
+  if (typeof account.passwordHash !== "string" || !account.passwordHash) {
+    return null;
+  }
+
+  return {
+    passwordSalt: account.passwordSalt,
+    passwordHash: account.passwordHash,
+    createdAt: Number.isInteger(account.createdAt) ? account.createdAt : Date.now(),
+  };
+}
+
 function parseStoredUserState(rawUser, now) {
   const fallback = createDefaultUserState(now);
   if (!rawUser || typeof rawUser !== "object") {
@@ -297,6 +389,10 @@ class PomodoroService {
     this.now = typeof options.now === "function" ? options.now : () => Date.now();
     this.dataFile =
       options.dataFile || path.join(__dirname, "..", "data", "pomodoro-store.json");
+    this.sessionTtlMs =
+      Number.isInteger(options.sessionTtlMs) && options.sessionTtlMs > 0
+        ? options.sessionTtlMs
+        : DEFAULT_SESSION_TTL_MS;
     this.tickIntervalMs =
       Number.isInteger(options.tickIntervalMs) && options.tickIntervalMs > 0
         ? options.tickIntervalMs
@@ -306,6 +402,7 @@ class PomodoroService {
         ? options.heartbeatIntervalMs
         : 15000;
     this.clients = new Map();
+    this.sessions = new Map();
     this.store = this.loadStore();
 
     this.maintenanceTimer = setInterval(() => {
@@ -322,29 +419,51 @@ class PomodoroService {
     fs.mkdirSync(directory, { recursive: true });
 
     if (!fs.existsSync(this.dataFile)) {
-      return { users: {} };
+      return { users: {}, accounts: {} };
     }
 
     try {
       const rawText = fs.readFileSync(this.dataFile, "utf8");
       if (!rawText.trim()) {
-        return { users: {} };
+        return { users: {}, accounts: {} };
       }
 
       const parsed = JSON.parse(rawText);
-      if (!parsed || typeof parsed !== "object" || typeof parsed.users !== "object") {
-        return { users: {} };
+      if (!parsed || typeof parsed !== "object") {
+        return { users: {}, accounts: {} };
       }
 
       const now = this.now();
       const users = {};
-      for (const [userId, rawUserState] of Object.entries(parsed.users)) {
+      const rawUsers =
+        parsed.users && typeof parsed.users === "object" && !Array.isArray(parsed.users)
+          ? parsed.users
+          : {};
+
+      for (const [userId, rawUserState] of Object.entries(rawUsers)) {
         users[userId] = parseStoredUserState(rawUserState, now);
       }
 
-      return { users };
+      const accounts = {};
+      const rawAccounts =
+        parsed.accounts && typeof parsed.accounts === "object" && !Array.isArray(parsed.accounts)
+          ? parsed.accounts
+          : {};
+
+      for (const [userId, rawAccount] of Object.entries(rawAccounts)) {
+        const normalizedUserId = normalizeUserId(userId);
+        if (!normalizedUserId) {
+          continue;
+        }
+        const account = parseStoredAccount(rawAccount);
+        if (account) {
+          accounts[normalizedUserId] = account;
+        }
+      }
+
+      return { users, accounts };
     } catch {
-      return { users: {} };
+      return { users: {}, accounts: {} };
     }
   }
 
@@ -366,6 +485,8 @@ class PomodoroService {
       }
       this.clients.delete(userId);
     }
+
+    this.sessions.clear();
   }
 
   ensureUser(userId) {
@@ -377,6 +498,99 @@ class PomodoroService {
     }
 
     return userState;
+  }
+
+  createSession(userId) {
+    const token = `${randomUUID()}${randomUUID().replace(/-/g, "")}`;
+    const now = this.now();
+
+    this.sessions.set(token, {
+      userId,
+      expiresAt: now + this.sessionTtlMs,
+    });
+
+    return token;
+  }
+
+  cleanupExpiredSessions(now) {
+    for (const [token, session] of this.sessions.entries()) {
+      if (!session || !Number.isInteger(session.expiresAt) || session.expiresAt <= now) {
+        this.sessions.delete(token);
+      }
+    }
+  }
+
+  requireUserByToken(token) {
+    const safeToken = typeof token === "string" ? token.trim() : "";
+    if (!safeToken) {
+      throw createApiError(401, "Unauthorized");
+    }
+
+    const session = this.sessions.get(safeToken);
+    if (!session) {
+      throw createApiError(401, "Unauthorized");
+    }
+
+    const now = this.now();
+    if (!Number.isInteger(session.expiresAt) || session.expiresAt <= now) {
+      this.sessions.delete(safeToken);
+      throw createApiError(401, "Session expired");
+    }
+
+    session.expiresAt = now + this.sessionTtlMs;
+    this.sessions.set(safeToken, session);
+    return session.userId;
+  }
+
+  registerAccount(rawBody) {
+    const userId = normalizeUserId(rawBody?.userId);
+    const password = normalizePassword(rawBody?.password);
+    validateUserId(userId);
+    validatePasswordForRegistration(password);
+
+    if (this.store.accounts[userId]) {
+      throw createApiError(409, "Account already exists");
+    }
+
+    const now = this.now();
+    this.store.accounts[userId] = {
+      ...createPasswordRecord(password),
+      createdAt: now,
+    };
+    this.ensureUser(userId);
+    this.saveStore();
+
+    const token = this.createSession(userId);
+    return { userId, token };
+  }
+
+  loginAccount(rawBody) {
+    const userId = normalizeUserId(rawBody?.userId);
+    const password = normalizePassword(rawBody?.password);
+    validateUserId(userId);
+    validatePasswordForLogin(password);
+
+    const account = this.store.accounts[userId];
+    if (!account) {
+      throw createApiError(401, "Invalid credentials");
+    }
+
+    const computedHash = hashPassword(password, account.passwordSalt);
+    const matched = safeCompareHash(account.passwordHash, computedHash);
+    if (!matched) {
+      throw createApiError(401, "Invalid credentials");
+    }
+
+    const token = this.createSession(userId);
+    return { userId, token };
+  }
+
+  logoutAccount(token) {
+    const safeToken = typeof token === "string" ? token.trim() : "";
+    if (safeToken) {
+      this.sessions.delete(safeToken);
+    }
+    return { success: true };
   }
 
   createStatePayload(userId, reason, now, userState) {
@@ -437,15 +651,15 @@ class PomodoroService {
     return this.createStatePayload(userId, "state:read", now, userState);
   }
 
-  applyAction(rawBody) {
-    const userId = normalizeUserId(rawBody.userId);
-    validateUserId(userId);
+  applyAction(userId, rawBody) {
+    const safeUserId = normalizeUserId(userId);
+    validateUserId(safeUserId);
 
     if (typeof rawBody.type !== "string" || !Object.hasOwn(ACTIONS, rawBody.type)) {
       throw createApiError(400, "Unknown action type");
     }
 
-    const { userState } = this.syncUserTimer(userId);
+    const { userState } = this.syncUserTimer(safeUserId);
     const actionNow = this.now();
     const payload = rawBody.payload && typeof rawBody.payload === "object" ? rawBody.payload : {};
 
@@ -482,11 +696,11 @@ class PomodoroService {
     }
 
     if (changed) {
-      this.commitUserState(userId, userState, `action:${actionType}`, actionNow);
+      this.commitUserState(safeUserId, userState, `action:${actionType}`, actionNow);
     }
 
     return this.createStatePayload(
-      userId,
+      safeUserId,
       changed ? `action:${actionType}` : `action:${actionType}:noop`,
       this.now(),
       userState,
@@ -651,6 +865,7 @@ class PomodoroService {
 
   handleMaintenanceTick() {
     const now = this.now();
+    this.cleanupExpiredSessions(now);
 
     for (const [userId, userState] of Object.entries(this.store.users)) {
       if (advanceTimerIfNeeded(userState, now)) {
@@ -789,6 +1004,20 @@ async function readJsonBody(req) {
   });
 }
 
+function resolveAuthToken(req, requestUrl) {
+  const fromHeader = extractBearerToken(req.headers.authorization);
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  const fromQuery = requestUrl.searchParams.get("token");
+  if (typeof fromQuery === "string" && fromQuery.trim()) {
+    return fromQuery.trim();
+  }
+
+  return "";
+}
+
 function serveStatic(pathname, res) {
   const staticConfig = STATIC_FILES[pathname];
   if (!staticConfig) {
@@ -820,22 +1049,54 @@ async function handleRequest(req, res, service) {
     return;
   }
 
+  if (method === "POST" && pathname === "/api/auth/register") {
+    const body = await readJsonBody(req);
+    const payload = service.registerAccount(body);
+    sendJson(res, 201, payload);
+    return;
+  }
+
+  if (method === "POST" && pathname === "/api/auth/login") {
+    const body = await readJsonBody(req);
+    const payload = service.loginAccount(body);
+    sendJson(res, 200, payload);
+    return;
+  }
+
+  if (method === "POST" && pathname === "/api/auth/logout") {
+    const token = resolveAuthToken(req, requestUrl);
+    const payload = service.logoutAccount(token);
+    sendJson(res, 200, payload);
+    return;
+  }
+
+  if (method === "GET" && pathname === "/api/auth/me") {
+    const token = resolveAuthToken(req, requestUrl);
+    const userId = service.requireUserByToken(token);
+    sendJson(res, 200, { userId });
+    return;
+  }
+
   if (method === "GET" && pathname === "/api/state") {
-    const userId = normalizeUserId(requestUrl.searchParams.get("userId"));
+    const token = resolveAuthToken(req, requestUrl);
+    const userId = service.requireUserByToken(token);
     const payload = service.getState(userId);
     sendJson(res, 200, payload);
     return;
   }
 
   if (method === "POST" && pathname === "/api/action") {
+    const token = resolveAuthToken(req, requestUrl);
+    const userId = service.requireUserByToken(token);
     const body = await readJsonBody(req);
-    const payload = service.applyAction(body);
+    const payload = service.applyAction(userId, body);
     sendJson(res, 200, payload);
     return;
   }
 
   if (method === "GET" && pathname === "/api/stream") {
-    const userId = normalizeUserId(requestUrl.searchParams.get("userId"));
+    const token = resolveAuthToken(req, requestUrl);
+    const userId = service.requireUserByToken(token);
     service.openStateStream(userId, req, res);
     return;
   }
