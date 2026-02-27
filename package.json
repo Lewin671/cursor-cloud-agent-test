@@ -1,17 +1,17 @@
 {
-  "name": "cursor-cloud-agent-test",
+  "name": "pomodoro-sync-app",
   "version": "1.0.0",
-  "description": "A minimal Node.js application",
-  "main": "src/index.js",
+  "private": true,
+  "description": "Full-stack Pomodoro app with multi-device sync",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node --test src/**/*.test.js",
-    "lint": "eslint src/"
+    "dev": "./scripts/dev.sh",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "cd backend && go run ./cmd/server",
+    "migrate": "cd backend && go run ./cmd/migrate",
+    "build:frontend": "npm --prefix frontend run build",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "test:backend": "cd backend && go test ./..."
   },
   "keywords": [],
-  "license": "MIT",
-  "devDependencies": {
-    "eslint": "^10.0.2"
-  }
+  "license": "MIT"
 }

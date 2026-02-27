@@ -2,18 +2,28 @@
 
 ## Cursor Cloud specific instructions
 
-This is a minimal Node.js HTTP server (no external frameworks). It uses only Node.js built-in modules (`node:http`, `node:test`, `node:assert`).
+This repository is a full-stack Pomodoro app with frontend/backed separation:
 
-### Available npm scripts
+- Frontend: React + TypeScript (Vite) under `frontend/`
+- Backend: Go + Gin + SQLite under `backend/`
 
-See `package.json` for the full list. Key commands:
+### Key commands
 
-- `npm run dev` — starts the server with `--watch` for hot reloading (port 3000 by default, override with `PORT` env var)
-- `npm test` — runs tests using Node.js built-in test runner
-- `npm run lint` — runs ESLint on `src/`
+- `npm run dev` (repo root): starts backend + frontend together
+- `npm run dev:frontend`: start frontend only
+- `npm run dev:backend`: start backend only
+- `npm run migrate`: apply backend DB migrations
+
+### Backend testing/lint
+
+- `cd backend && go test ./...`
+
+### Frontend testing/lint
+
+- `cd frontend && npm run build`
+- `cd frontend && npm run lint`
 
 ### Notes
 
-- ESLint is the only dev dependency. Tests use `node:test` (built-in), so no test framework install is needed.
-- The dev server uses Node.js `--watch` mode; changes to `src/` files trigger automatic restarts.
-- There are no external services or databases required.
+- Backend applies SQL migrations on startup from `backend/migrations/`.
+- No external services are required; SQLite file is local (`backend/data/pomodoro.db` by default).
