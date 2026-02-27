@@ -2,18 +2,27 @@
 
 ## Cursor Cloud specific instructions
 
-This is a minimal Node.js HTTP server (no external frameworks). It uses only Node.js built-in modules (`node:http`, `node:test`, `node:assert`).
+A full-stack Pomodoro Timer app with real-time cross-device sync via WebSocket.
+
+### Architecture
+
+- **Backend**: Express.js (REST API + static file serving) + `ws` (WebSocket for real-time sync) + `better-sqlite3` (SQLite for persistence)
+- **Frontend**: Vanilla HTML/CSS/JS SPA served from `public/`
+- **Auth**: JWT-based (bcryptjs for password hashing, jsonwebtoken for tokens)
+- **Data sync**: WebSocket broadcasts timer state changes to all connected devices of the same user
 
 ### Available npm scripts
 
-See `package.json` for the full list. Key commands:
+See `package.json`. Key commands:
 
-- `npm run dev` — starts the server with `--watch` for hot reloading (port 3000 by default, override with `PORT` env var)
-- `npm test` — runs tests using Node.js built-in test runner
-- `npm run lint` — runs ESLint on `src/`
+- `npm run dev` — starts the server with `--watch` on port 3000 (override with `PORT` env var)
+- `npm test` — 19 API tests using Node.js built-in test runner
+- `npm run lint` — ESLint on `src/` and `public/`
+- `npm start` — production start
 
 ### Notes
 
-- ESLint is the only dev dependency. Tests use `node:test` (built-in), so no test framework install is needed.
-- The dev server uses Node.js `--watch` mode; changes to `src/` files trigger automatic restarts.
-- There are no external services or databases required.
+- SQLite database is created at `data/pomodoro.db` on first run (auto-created directory). Tests use in-memory SQLite.
+- Timer state is stored server-side; all connected clients compute remaining time from the server's `started_at` timestamp.
+- The `--watch` dev mode auto-restarts on `src/` changes but does NOT live-reload the browser.
+- No external services or databases are required — everything runs locally with SQLite.
