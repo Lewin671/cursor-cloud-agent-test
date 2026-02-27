@@ -1,0 +1,17 @@
+{
+  "name": "cursor-cloud-agent-test",
+  "version": "1.0.0",
+  "description": "A minimal Node.js application",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test src/**/*.test.js",
+    "lint": "eslint src/"
+  },
+  "keywords": [],
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^10.0.2"
+  }
+}
