@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   longBreakEvery: 4,
 });
 
-const MIN_DURATION_MINUTES = 0.05;
+const MIN_DURATION_MINUTES = 0.001;
 const MAX_DURATION_MINUTES = 180;
 const MIN_LONG_BREAK_INTERVAL = 2;
 const MAX_LONG_BREAK_INTERVAL = 12;
@@ -44,8 +44,8 @@ function createApiError(statusCode, message) {
   return error;
 }
 
-function roundToTwoDecimals(value) {
-  return Math.round(value * 100) / 100;
+function roundToThreeDecimals(value) {
+  return Math.round(value * 1000) / 1000;
 }
 
 function minutesToMs(minutes) {
@@ -92,7 +92,7 @@ function validateDuration(value, fieldName) {
     );
   }
 
-  return roundToTwoDecimals(parsed);
+  return roundToThreeDecimals(parsed);
 }
 
 function validateLongBreakInterval(value) {
